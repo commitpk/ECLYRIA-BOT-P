@@ -94,6 +94,18 @@ class SheetManager
     puts "[시트 로그 추가 오류] #{e.message}"
   end
 
+  def append_values(range, values)
+    vr = Google::Apis::SheetsV4::ValueRange.new(values: values)
+    @service.append_spreadsheet_value(
+      @sheet_id,
+      range,
+      vr,
+      value_input_option: 'USER_ENTERED'
+    )
+  rescue => e
+    puts "[append_values 오류] #{e.class} - #{e.message}"
+  end
+
   # ============================================
   # 학적부 관리 기능
   # ============================================
