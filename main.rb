@@ -89,26 +89,60 @@ rescue => e
   puts "[에러] 답글 전송 실패: #{e.message}"
 end
 
-REPLY = proc do |content, in_reply_to_id|
-  # ⚡ 순서가 뒤집힌 경우 자동 수정
-  if in_reply_to_id.is_a?(String) && !in_reply_to_id.match?(/^\d+$/) &&
-     content.is_a?(String) && content.match?(/^\d+$/)
-    puts "[REPLY GUARD] 인자 순서가 뒤집혀 있어 교정합니다."
-    content, in_reply_to_id = in_reply_to_id, content
+REPLY = proc do |arg1, arg2|
+  raw_content = arg1
+  raw_id      = arg2
+
+  puts "[REPLY ARGS] raw_content=#{raw_content.inspect} raw_id=#{raw_id.inspect}"
+
+  content_str = nil
+  id_str      = nil
+
+  # 1) 첫 번째 인자가 status 객체(OpenStruct or Hash)인 경우
+  if arg1.is_a?(OpenStruct) || arg1.is_a?(Hash)
+    status = arg1
+    toot_id =
+      if status.respond_to?(:id)
+        status.id
+      else
+        status['id']
+      end
+
+    content_str = arg2.to_s      # 두 번째 인자를 답글 내용으로
+    id_str      = toot_id.to_s   # status.id를 in_reply_to_id로 사용
+
+  else
+    # 2) 일반적인 경우: (content, in_reply_to_id) 또는 (id, content)
+    content_str = arg1.to_s
+    id_str      = arg2.to_s
+
+    # ⚡ 순서가 뒤집힌 경우 자동 교정:
+    #   - id_str가 숫자가 아니고
+    #   - content_str이 숫자처럼 생겼으면 -> 뒤집힌 걸로 간주
+    if id_str !~ /^\d+$/ && content_str =~ /^\d+$/
+      puts "[REPLY GUARD] 인자 순서가 뒤집혀 있어 교정합니다. (content ↔ id)"
+      content_str, id_str = id_str, content_str
+    end
+  end
+
+  # 최종적으로 in_reply_to_id가 숫자여야만 요청을 보냄
+  unless id_str =~ /^\d+$/
+    puts "[REPLY ERROR] in_reply_to_id가 숫자가 아닙니다: #{id_str.inspect}"
+    return
   end
 
   uri = URI(POST_ENDPOINT)
   req = Net::HTTP::Post.new(uri)
   req['Authorization'] = "Bearer #{TOKEN}"
   req.set_form_data(
-    'status' => content,
-    'in_reply_to_id' => in_reply_to_id,
-    'visibility' => 'unlisted'
+    'status'         => content_str,
+    'in_reply_to_id' => id_str,
+    'visibility'     => 'unlisted'
   )
 
   res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(req) }
 
-  puts "[REPLY] code=#{res.code} body=#{res.body[0,200].inspect} to=#{in_reply_to_id}"
+  puts "[REPLY] code=#{res.code} body=#{res.body[0,200].inspect} to=#{id_str}"
   if res.code.to_i >= 300
     puts "[에러] 답글 전송 실패 (HTTP #{res.code})"
   else
